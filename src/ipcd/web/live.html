@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ipcd — Live</title>
+<style>
+  :root { --fg:#e5e7eb; --bg:#0b0b0d; --accent:#2563eb; --muted:#9ca3af;
+          --line:#1f2937; --ok:#10b981; --err:#dc2626; --warn:#f59e0b; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:1024px; margin:0 auto; padding:14px; }
+  nav { display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--line); }
+  nav a { flex:1; text-align:center; padding:10px 6px; font-size:.85rem;
+    text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; }
+  nav a.active { color:var(--accent); border-color:var(--accent); font-weight:600; }
+  .video-wrap { background:#000; border-radius:8px; overflow:hidden;
+    aspect-ratio:16/9; display:flex; align-items:center; justify-content:center;
+    position:relative; }
+  video { width:100%; height:100%; object-fit:contain; background:#000; }
+  .overlay { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; background:rgba(0,0,0,.65); color:#e5e7eb;
+    font-size:.95rem; padding:20px; text-align:center; flex-direction:column; gap:8px; }
+  .overlay.hidden { display:none; }
+  .overlay .small { font-size:.78rem; color:var(--muted); }
+  .info { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; font-size:.8rem; color:var(--muted); }
+  .pill { background:#111827; border:1px solid var(--line); padding:4px 10px; border-radius:9999px; }
+  .pill span { color:#e5e7eb; font-variant-numeric:tabular-nums; }
+  .pill.ok span  { color:var(--ok); }
+  .pill.err span { color:var(--err); }
+  .help { margin-top:14px; font-size:.82rem; color:var(--muted); line-height:1.5; }
+  .help code { background:#111827; padding:1px 6px; border-radius:4px; color:#e5e7eb;
+    font-family:ui-monospace,Consolas,monospace; }
+  .ctl { margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+  button { padding:8px 14px; background:#1f2937; color:#e5e7eb; border:1px solid var(--line);
+    border-radius:8px; font-size:.85rem; cursor:pointer; }
+  button:hover { background:#374151; }
+  #log { margin-top:10px; font-family:ui-monospace,Consolas,monospace; font-size:.72rem;
+    background:#0f1117; border:1px solid var(--line); border-radius:6px;
+    padding:8px 10px; max-height:140px; overflow:auto; color:var(--muted);
+    display:none; }
+  #log.show { display:block; }
+  #log .e { color:var(--err); }
+  #log .w { color:var(--warn); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="/">Setup</a>
+    <a href="/stats">Stats</a>
+    <a href="/live" class="active" style="color:#fff;">Live</a>
+  </nav>
+
+  <div class="video-wrap">
+    <video id="v" controls autoplay muted playsinline></video>
+    <div id="overlay" class="overlay">
+      <div id="ov-msg">Initializing player…</div>
+      <div class="small" id="ov-sub"></div>
+    </div>
+  </div>
+
+  <div class="info">
+    <div class="pill">FPS <span id="fps">—</span></div>
+    <div class="pill">Bitrate <span id="kbps">—</span> kbps</div>
+    <div class="pill">Buffer <span id="buf">—</span> s</div>
+    <div class="pill">Player <span id="player">—</span></div>
+    <div class="pill" id="ir-pill">IR <span id="ir">—</span></div>
+  </div>
+
+  <div class="ctl">
+    <button id="reload">Reload stream</button>
+    <button id="diag">Toggle diagnostics</button>
+  </div>
+
+  <div id="log"></div>
+
+  <div class="help">
+    Live preview is HLS (~6–10 s latency). For low-latency viewing,
+    use any RTSP client at <code id="rtsp">rtsp://CAMERA-IP:8554/main</code>
+    (or <code>/sub</code> for the 360p stream).
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const v = $('v'), overlay = $('overlay'), log = $('log');
+
+let player = 'none';
+let consec_err = 0;
+
+function tlog(msg, cls) {
+  const t = new Date().toISOString().substr(11, 8);
+  const line = document.createElement('div');
+  line.className = cls || '';
+  line.textContent = `[${t}] ${msg}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+function setOverlay(msg, sub) {
+  $('ov-msg').textContent = msg || '';
+  $('ov-sub').textContent = sub || '';
+  if (msg) overlay.classList.remove('hidden');
+}
+function hideOverlay() { overlay.classList.add('hidden'); }
+
+const SRC = '/hls/live.m3u8';
+
+/*
+ * Player selection:
+ *   1) hls.js if present (loaded from CDN, only works in STA mode
+ *      with internet). Best Chrome experience.
+ *   2) Native HLS (Safari, iOS, modern Edge). Works in AP mode too.
+ *   3) Otherwise show error pointing to RTSP URL.
+ *
+ * We try hls.js FIRST even on Safari, because hls.js gives us
+ * better diagnostics. If the CDN load fails, we fall through to
+ * native HLS playback.
+ */
+function loadHlsJs() {
+  return new Promise((resolve, reject) => {
+    if (window.Hls) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js';
+    s.onload  = () => resolve();
+    s.onerror = () => reject(new Error('hls.js CDN unreachable'));
+    document.head.appendChild(s);
+  });
+}
+
+function attachHlsJs() {
+  if (!(window.Hls && Hls.isSupported())) {
+    return false;
+  }
+  player = 'hls.js';
+  $('player').textContent = 'hls.js';
+  const hls = new Hls({
+    /* Live edge tuning: keep close to the live point but allow
+     * a bit of headroom so a single late segment fetch doesn't
+     * stall the player. */
+    liveSyncDurationCount: 3,
+    liveMaxLatencyDurationCount: 6,
+    lowLatencyMode: false,
+    /* Manifest reloads: 1.5s fits our 2s segment cadence */
+    manifestLoadingMaxRetry: 4,
+    manifestLoadingRetryDelay: 500,
+    fragLoadingMaxRetry: 4,
+    enableWorker: true,
+  });
+  hls.loadSource(SRC);
+  hls.attachMedia(v);
+  hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    tlog('manifest parsed, starting playback');
+    v.play().catch(e => tlog('autoplay blocked: ' + e.message, 'w'));
+  });
+  hls.on(Hls.Events.FRAG_LOADED, () => { hideOverlay(); consec_err = 0; });
+  hls.on(Hls.Events.ERROR, (_, d) => {
+    tlog((d.fatal ? 'FATAL ' : '') + d.type + '/' + d.details, d.fatal ? 'e' : 'w');
+    if (d.fatal) {
+      consec_err++;
+      if (consec_err > 3) {
+        setOverlay('Stream stopped responding',
+            'Press Reload, or check the RTSP URL for direct access');
+      } else {
+        /* Try to recover */
+        if (d.type === 'networkError') hls.startLoad();
+        else if (d.type === 'mediaError') hls.recoverMediaError();
+      }
+    }
+  });
+  window._hls = hls;     /* for debugging from devtools */
+  return true;
+}
+
+function attachNative() {
+  if (!v.canPlayType('application/vnd.apple.mpegurl')) {
+    return false;
+  }
+  player = 'native';
+  $('player').textContent = 'native';
+  v.src = SRC;
+  v.addEventListener('loadeddata', () => {
+    tlog('native HLS: loadeddata');
+    hideOverlay();
+  });
+  v.addEventListener('error', () => {
+    tlog('native player error: ' + (v.error ? v.error.code : 'unknown'), 'e');
+    setOverlay('Stream error', 'Try Reload, or use the RTSP URL below');
+  });
+  return true;
+}
+
+async function attach() {
+  setOverlay('Loading player…');
+  try {
+    await loadHlsJs();
+    if (attachHlsJs()) { tlog('using hls.js'); return; }
+  } catch (e) {
+    tlog('hls.js unavailable: ' + e.message, 'w');
+  }
+  if (attachNative()) { tlog('using native HLS'); return; }
+  setOverlay('No HLS player available',
+      'Use VLC/ffplay with the RTSP URL below.');
+  $('player').textContent = 'unsupported';
+}
+attach();
+
+$('reload').addEventListener('click', () => {
+  tlog('reload requested');
+  if (window._hls) { try { window._hls.destroy(); } catch(e){} window._hls = null; }
+  v.pause(); v.removeAttribute('src'); v.load();
+  setOverlay('Reloading…');
+  setTimeout(attach, 200);
+});
+$('diag').addEventListener('click', () => log.classList.toggle('show'));
+
+$('rtsp').textContent = `rtsp://${location.hostname}:8554/main`;
+
+async function poll() {
+  try {
+    const r = await fetch('/api/stats'); const j = await r.json();
+    const main = (j.streams || [])[0];
+    if (main) {
+      $('fps').textContent  = (main.fps_actual || 0).toFixed(1);
+      $('kbps').textContent = (main.kbps_actual || 0).toFixed(0);
+    }
+    if (v.buffered.length) {
+      const b = v.buffered.end(v.buffered.length - 1) - v.currentTime;
+      $('buf').textContent = b.toFixed(1);
+    }
+    /* IR indicator */
+    const irPill = $('ir-pill');
+    if (typeof j.ir_mode === 'number') {
+      const txt = j.ir_level ? 'night' : 'day';
+      $('ir').textContent = txt + (j.ir_mode === 1 ? ' (auto)' : ' (forced)');
+      irPill.className = 'pill ' + (j.ir_level ? 'err' : 'ok');
+    }
+  } catch(e) {}
+}
+poll(); setInterval(poll, 2000);
+</script>
+</body>
+</html>

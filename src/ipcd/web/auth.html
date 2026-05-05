@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ipcd — Auth</title>
+<style>
+  /* Light theme (default) */
+  :root {
+    --fg:#1a1a1a; --bg:#fafafa; --card:#fff; --line:#e5e7eb;
+    --muted:#6b7280; --accent:#2563eb; --ok:#059669; --err:#dc2626;
+    --warn:#d97706;
+    --input-bg:#fff; --input-fg:#111;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.theme-light) {
+      --fg:#e5e7eb; --bg:#0b0b0d; --card:#15171c; --line:#1f2937;
+      --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --err:#f87171;
+      --warn:#fbbf24; --input-bg:#1f2937; --input-fg:#e5e7eb;
+    }
+  }
+  html.theme-dark {
+    --fg:#e5e7eb; --bg:#0b0b0d; --card:#15171c; --line:#1f2937;
+    --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --err:#f87171;
+    --warn:#fbbf24; --input-bg:#1f2937; --input-fg:#e5e7eb;
+  }
+
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:680px; margin:0 auto; padding:18px; }
+  nav { display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--line);
+    align-items:center; }
+  nav a { flex:1; text-align:center; padding:10px 6px; font-size:.85rem;
+    text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; }
+  nav a.active { color:var(--accent); border-color:var(--accent); font-weight:600; }
+  .theme-toggle { background:transparent; border:1px solid var(--line);
+    color:var(--muted); padding:6px 10px; border-radius:6px; font-size:.78rem;
+    cursor:pointer; margin-left:8px; }
+  .theme-toggle:hover { color:var(--fg); }
+
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:.85rem; margin-bottom:14px; }
+
+  .group { background:var(--card); border:1px solid var(--line);
+    border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .group h2 { font-size:.95rem; margin:0 0 10px; font-weight:600; color:var(--fg); }
+
+  .field { display:flex; align-items:center; justify-content:space-between;
+    gap:10px; padding:8px 0; }
+  .field + .field { border-top:1px dashed var(--line); }
+  .field > label:first-child { flex:1; min-width:0; }
+  .field > label .name { display:block; font-size:.92rem; color:var(--fg); }
+  .field > label .desc { display:block; font-size:.75rem; color:var(--muted); margin-top:1px; }
+
+  input[type=text], input[type=password] {
+    background:var(--input-bg); color:var(--input-fg);
+    border:1px solid var(--line); border-radius:6px;
+    padding:6px 9px; font-size:.9rem; min-width:160px; max-width:200px;
+    flex-shrink:0;
+  }
+  input:focus { outline:none; border-color:var(--accent); }
+
+  .pw-wrap { position:relative; display:inline-flex; align-items:center; }
+  .pw-wrap input { padding-right:32px; }
+  .pw-toggle { position:absolute; right:6px; background:none; border:none;
+    color:var(--muted); cursor:pointer; font-size:.95rem; padding:2px 4px; }
+  .pw-toggle:hover { color:var(--fg); }
+
+  .actions { display:flex; gap:8px; margin-top:14px; }
+  button.btn { flex:1; padding:11px; border:none; border-radius:8px;
+    font-size:.95rem; font-weight:600; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; }
+  button.primary[disabled] { background:#9ca3af; cursor:not-allowed; }
+  button.secondary { background:transparent; color:var(--accent);
+    border:1px solid var(--accent); }
+  button.danger { background:transparent; color:var(--err);
+    border:1px solid var(--err); }
+
+  #msg { margin-top:12px; font-size:.88rem; min-height:1.2em; }
+  #msg.ok  { color:var(--ok); }
+  #msg.err { color:var(--err); }
+  #msg.warn{ color:var(--warn); }
+
+  .status-badge { display:inline-block; padding:2px 8px; border-radius:9999px;
+    font-size:.72rem; font-weight:600; margin-left:6px; }
+  .status-on  { background:#10b98122; color:var(--ok); }
+  .status-off { background:#9ca3af22; color:var(--muted); }
+
+  .note { background:#f59e0b14; border-left:3px solid var(--warn);
+    padding:10px 12px; border-radius:6px; font-size:.82rem; color:var(--fg);
+    margin-bottom:12px; }
+  .note.danger { background:#dc262614; border-left-color:var(--err); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="/">Wifi</a>
+    <a href="/stats">Stats</a>
+    <a href="/config">Settings</a>
+    <a href="/auth" class="active">Auth</a>
+    <button class="theme-toggle" id="themeToggle" type="button">🌓</button>
+  </nav>
+
+  <h1>Auth <span id="statusBadge" class="status-badge status-off">off</span></h1>
+  <div class="sub">Single user/password protects the web UI, RTSP, and ONVIF.</div>
+
+  <div id="firstSetupNote" class="note" style="display:none">
+    Auth is currently <strong>disabled</strong> — anyone on the network can access this
+    camera. Set a password below to enable Digest authentication on the web UI.
+    Once set, your browser will prompt for credentials on the next request.
+  </div>
+
+  <div class="group">
+    <h2>Credentials</h2>
+
+    <div class="field">
+      <label><span class="name">Username</span>
+        <span class="desc">Used by HTTP, RTSP, and ONVIF clients.</span></label>
+      <input type="text" id="user" autocomplete="username" placeholder="admin">
+    </div>
+
+    <div class="field">
+      <label><span class="name">Password</span>
+        <span class="desc">Leave blank to disable auth entirely.</span></label>
+      <span class="pw-wrap">
+        <input type="password" id="pass" autocomplete="new-password" placeholder="(unchanged)">
+        <button type="button" class="pw-toggle" id="pwToggle" aria-label="Show/hide password">👁</button>
+      </span>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" id="saveBtn">Save</button>
+      <button class="btn danger"  id="disableBtn">Disable auth</button>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* --- Theme management ------------------------------------------- */
+const T_KEY = 'ipcd-theme';
+function applyTheme(t) {
+  document.documentElement.classList.remove('theme-dark','theme-light');
+  if (t === 'dark')  document.documentElement.classList.add('theme-dark');
+  if (t === 'light') document.documentElement.classList.add('theme-light');
+}
+function loadTheme() { return localStorage.getItem(T_KEY) || 'auto'; }
+function saveTheme(t) { localStorage.setItem(T_KEY, t); applyTheme(t); }
+applyTheme(loadTheme());
+$('themeToggle').addEventListener('click', () => {
+  const cur = loadTheme();
+  const nxt = cur === 'auto' ? 'dark' : (cur === 'dark' ? 'light' : 'auto');
+  saveTheme(nxt);
+  $('themeToggle').textContent = nxt === 'dark' ? '🌙' : (nxt === 'light' ? '☀️' : '🌓');
+});
+{ const t = loadTheme();
+  $('themeToggle').textContent = t === 'dark' ? '🌙' : (t === 'light' ? '☀️' : '🌓');
+}
+
+/* --- Password show/hide toggle ---------------------------------- */
+$('pwToggle').addEventListener('click', () => {
+  const i = $('pass');
+  i.type = (i.type === 'password') ? 'text' : 'password';
+  $('pwToggle').textContent = (i.type === 'password') ? '👁' : '🙈';
+});
+
+/* --- Status load + save logic ----------------------------------- */
+function showMsg(t, kind) { const m=$('msg'); m.className=kind||'ok'; m.textContent=t; }
+
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/auth');
+    if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json();
+    if (j.user) $('user').value = j.user;
+    if (j.configured) {
+      $('statusBadge').className = 'status-badge status-on';
+      $('statusBadge').textContent = 'on';
+      $('firstSetupNote').style.display = 'none';
+    } else {
+      $('statusBadge').className = 'status-badge status-off';
+      $('statusBadge').textContent = 'off';
+      $('firstSetupNote').style.display = '';
+    }
+  } catch (e) {
+    showMsg('Could not load auth status: ' + e.message, 'err');
+  }
+}
+
+async function postCreds(user, pass) {
+  const body = 'user=' + encodeURIComponent(user) +
+               '&pass=' + encodeURIComponent(pass);
+  const r = await fetch('/api/auth', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(t || ('http ' + r.status));
+  }
+  return r.json();
+}
+
+$('saveBtn').addEventListener('click', async () => {
+  const user = $('user').value.trim();
+  const pass = $('pass').value;
+  if (!user) { showMsg('Username is required.', 'err'); return; }
+  if (!pass) { showMsg('Password is required to enable auth. Use “Disable auth” to turn it off.', 'err'); return; }
+  $('saveBtn').disabled = true;
+  try {
+    await postCreds(user, pass);
+    showMsg('Saved. Your browser may prompt you to authenticate again.', 'ok');
+    $('pass').value = '';
+    setTimeout(loadStatus, 200);
+  } catch (e) {
+    showMsg('Save failed: ' + e.message, 'err');
+  } finally {
+    $('saveBtn').disabled = false;
+  }
+});
+
+$('disableBtn').addEventListener('click', async () => {
+  if (!confirm('Disable authentication? Anyone on the network will be able to access this camera.'))
+    return;
+  $('disableBtn').disabled = true;
+  try {
+    /* Send empty user+pass — backend interprets this as "auth off" */
+    await postCreds('', '');
+    showMsg('Auth disabled.', 'warn');
+    $('user').value = '';
+    $('pass').value = '';
+    setTimeout(loadStatus, 200);
+  } catch (e) {
+    showMsg('Could not disable: ' + e.message, 'err');
+  } finally {
+    $('disableBtn').disabled = false;
+  }
+});
+
+loadStatus();
+</script>
+</body>
+</html>

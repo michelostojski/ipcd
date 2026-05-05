@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ipcd — Settings</title>
+<style>
+  /* Light theme (default) */
+  :root {
+    --fg:#1a1a1a; --bg:#fafafa; --card:#fff; --line:#e5e7eb;
+    --muted:#6b7280; --accent:#2563eb; --ok:#059669; --err:#dc2626;
+    --warn:#d97706; --tier1:#10b981; --tier2:#f59e0b; --tier3:#ef4444;
+    --input-bg:#fff; --input-fg:#111;
+  }
+  /* Dark theme — applied either via prefers-color-scheme or by
+   * .theme-dark class on <html> (toggle button overrides browser
+   * preference; saved in localStorage). */
+  @media (prefers-color-scheme: dark) {
+    :root:not(.theme-light) {
+      --fg:#e5e7eb; --bg:#0b0b0d; --card:#15171c; --line:#1f2937;
+      --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --err:#f87171;
+      --warn:#fbbf24; --input-bg:#1f2937; --input-fg:#e5e7eb;
+    }
+  }
+  html.theme-dark {
+    --fg:#e5e7eb; --bg:#0b0b0d; --card:#15171c; --line:#1f2937;
+    --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --err:#f87171;
+    --warn:#fbbf24; --input-bg:#1f2937; --input-fg:#e5e7eb;
+  }
+
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:680px; margin:0 auto; padding:18px; }
+  nav { display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--line);
+    align-items:center; }
+  nav a { flex:1; text-align:center; padding:10px 6px; font-size:.85rem;
+    text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; }
+  nav a.active { color:var(--accent); border-color:var(--accent); font-weight:600; }
+  .theme-toggle { background:transparent; border:1px solid var(--line);
+    color:var(--muted); padding:6px 10px; border-radius:6px; font-size:.78rem;
+    cursor:pointer; margin-left:8px; }
+  .theme-toggle:hover { color:var(--fg); }
+
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:.85rem; margin-bottom:14px; }
+
+  .group { background:var(--card); border:1px solid var(--line);
+    border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .group h2 { font-size:.95rem; margin:0 0 10px; font-weight:600; color:var(--fg); }
+  .field { display:flex; align-items:center; justify-content:space-between;
+    gap:10px; padding:8px 0; }
+  .field + .field { border-top:1px dashed var(--line); }
+  /* The first <label> in each field carries the name+desc text and
+   * should expand to fill available space; toggle/select/input on
+   * the right keeps its natural size. We target ONLY that first
+   * label, not the .toggle one. */
+  .field > label:first-child { flex:1; min-width:0; }
+  .field > label .name { display:block; font-size:.92rem; color:var(--fg); }
+  .field > label .desc { display:block; font-size:.75rem; color:var(--muted); margin-top:1px; }
+  .tier { display:inline-block; padding:1px 6px; border-radius:9999px; font-size:.65rem;
+    margin-left:6px; font-weight:600; vertical-align:middle; }
+  .tier-1 { background:#10b98122; color:var(--tier1); }
+  .tier-2 { background:#f59e0b22; color:var(--tier2); }
+  .tier-3 { background:#ef444422; color:var(--tier3); }
+
+  input[type=text], input[type=number], select {
+    background:var(--input-bg); color:var(--input-fg);
+    border:1px solid var(--line); border-radius:6px;
+    padding:6px 9px; font-size:.9rem; min-width:120px; max-width:160px;
+    text-align:right; font-variant-numeric:tabular-nums;
+    flex-shrink:0;
+  }
+  /* Selects look weird right-aligned; left-align them. */
+  select { text-align:left; padding-right:24px; }
+  input[type=number] { -moz-appearance:textfield; }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  input:focus, select:focus { outline:none; border-color:var(--accent); }
+  /* Toggle switch for booleans */
+  .toggle { position:relative; width:42px; height:22px; flex-shrink:0; }
+  .toggle input { opacity:0; width:0; height:0; }
+  .toggle .slider { position:absolute; cursor:pointer; inset:0; background:#9ca3af;
+    border-radius:9999px; transition:.2s; }
+  .toggle .slider::before { position:absolute; content:""; height:16px; width:16px;
+    left:3px; bottom:3px; background:#fff; border-radius:50%; transition:.2s; }
+  .toggle input:checked + .slider { background:var(--accent); }
+  .toggle input:checked + .slider::before { transform:translateX(20px); }
+
+  .actions { display:flex; gap:8px; margin-top:14px; }
+  button.btn { flex:1; padding:11px; border:none; border-radius:8px;
+    font-size:.95rem; font-weight:600; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; }
+  button.primary[disabled] { background:#9ca3af; cursor:not-allowed; }
+  button.secondary { background:transparent; color:var(--accent);
+    border:1px solid var(--accent); }
+
+  #msg { margin-top:12px; font-size:.88rem; min-height:1.2em; }
+  #msg.ok  { color:var(--ok); }
+  #msg.err { color:var(--err); }
+  #msg.warn{ color:var(--warn); }
+
+  .legend { font-size:.72rem; color:var(--muted); margin-top:6px; }
+  .legend .tier { font-size:.65rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="/">Wifi</a>
+    <a href="/stats">Stats</a>
+    <a href="/config" class="active">Settings</a>
+    <a href="/auth">Auth</a>
+    <button class="theme-toggle" id="themeToggle" type="button">🌓</button>
+  </nav>
+
+  <h1>Settings</h1>
+  <div class="sub">Settings persist to <code>/etc/config/ipcd.conf</code>. CLI args override the file at boot.</div>
+
+  <div class="group">
+    <h2>Streams</h2>
+
+    <div class="field">
+      <label><span class="name">Main stream<span class="tier tier-2">restart</span></span>
+        <span class="desc">1080p — reference quality. Disabling saves CPU.</span></label>
+      <label class="toggle"><input type="checkbox" id="enable_main"><span class="slider"></span></label>
+    </div>
+
+    <div class="field">
+      <label><span class="name">Main codec<span class="tier tier-2">restart</span></span>
+        <span class="desc">H.265 ≈ half the bitrate; some clients (older VLC) struggle.</span></label>
+      <select id="main_codec">
+        <option value="h264">H.264</option>
+        <option value="h265">H.265</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label><span class="name">Main bitrate (kbps)<span class="tier tier-2">restart</span></span>
+        <span class="desc">64 – 8000. Higher = better quality, more CPU + bandwidth.</span></label>
+      <input id="main_kbps" type="number" min="64" max="8000" step="50">
+    </div>
+
+    <div class="field">
+      <label><span class="name">Sub stream<span class="tier tier-2">restart</span></span>
+        <span class="desc">360p — for previews and low-bandwidth clients.</span></label>
+      <label class="toggle"><input type="checkbox" id="enable_sub"><span class="slider"></span></label>
+    </div>
+
+    <div class="field">
+      <label><span class="name">Sub codec<span class="tier tier-2">restart</span></span></label>
+      <select id="sub_codec">
+        <option value="h264">H.264</option>
+        <option value="h265">H.265</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label><span class="name">Sub bitrate (kbps)<span class="tier tier-2">restart</span></span>
+        <span class="desc">32 – 2000.</span></label>
+      <input id="sub_kbps" type="number" min="32" max="2000" step="10">
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Encode</h2>
+
+    <div class="field">
+      <label><span class="name">Frame rate<span class="tier tier-2">restart</span></span>
+        <span class="desc">15 is the validated default for this sensor. 30 is risky on this SoC.</span></label>
+      <input id="fps" type="number" min="1" max="60">
+    </div>
+
+    <div class="field">
+      <label><span class="name">GOP length (s)<span class="tier tier-2">restart</span></span>
+        <span class="desc">Keyframe interval. 1 s = lower latency but bigger bitrate.</span></label>
+      <input id="gop_sec" type="number" min="1" max="10">
+    </div>
+
+    <div class="field">
+      <label><span class="name">RTSP port<span class="tier tier-2">restart</span></span>
+        <span class="desc">Default 8554.</span></label>
+      <input id="rtsp_port" type="number" min="1" max="65535">
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Day / night</h2>
+
+    <div class="field">
+      <label><span class="name">IR mode<span class="tier tier-1">live</span></span>
+        <span class="desc">Auto follows the luma sensor. Force day keeps the IR LED off; force night keeps it on.</span></label>
+      <select id="ir_mode_sel" class="narrow">
+        <option value="auto">Auto</option>
+        <option value="off">Force day</option>
+        <option value="night">Force night</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label><span class="name">Auto IR detection<span class="tier tier-2">restart</span></span>
+        <span class="desc">Disables the day/night state machine entirely. Use when external IR illumination is wired separately.</span></label>
+      <label class="toggle"><input type="checkbox" id="ir_enable"><span class="slider"></span></label>
+    </div>
+
+    <div class="field">
+      <label><span class="name">Day → Night threshold<span class="tier tier-1">live</span></span>
+        <span class="desc">AE-gain value above which scene is dark. Bigger = less sensitive.</span></label>
+      <input id="ir_d2n_lum" type="number" min="100" max="65000" step="100">
+    </div>
+
+    <div class="field">
+      <label><span class="name">Night → Day threshold<span class="tier tier-1">live</span></span>
+        <span class="desc">AE-gain value below which scene is bright again.</span></label>
+      <input id="ir_n2d_lum" type="number" min="50" max="10000" step="50">
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Motion</h2>
+
+    <div class="field">
+      <label><span class="name">Detection threshold<span class="tier tier-1">live</span></span>
+        <span class="desc">Motion sensitivity: lower = more sensitive. Default 1500. Adjust if false positives or missed events.</span></label>
+      <input id="md_threshold" type="number" min="100" max="50000" step="100">
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>Audio</h2>
+
+    <div class="field">
+      <label><span class="name">Speaker volume (dB)<span class="tier tier-1">live</span></span>
+        <span class="desc">Talkback playback level. 0 dB = full DAC scale (loud); -12 dB conversational; -40 dB whisper. Range -40..+10.</span></label>
+      <input id="audio_volume_db" type="number" min="-40" max="10" step="1">
+    </div>
+
+    <div class="field">
+      <label><span class="name">Microphone enabled<span class="tier tier-1">live</span></span>
+        <span class="desc">Master switch for the camera mic. When off the RTSP stream contains video only and no SDP audio entry is advertised.</span></label>
+      <label class="toggle"><input type="checkbox" id="audio_in_enable"><span class="slider"></span></label>
+    </div>
+
+    <div class="field">
+      <label><span class="name">Echo cancellation (AEC)<span class="tier tier-2">restart</span></span>
+        <span class="desc">Cancels echo of the speaker from the mic during talkback. Costs significant CPU on this SoC; leave off unless you talk back often. Takes effect on the next RTSP session.</span></label>
+      <label class="toggle"><input type="checkbox" id="audio_aec_enable"><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="tier tier-1">live</span> takes effect immediately ·
+    <span class="tier tier-2">restart</span> interrupts streams for ~3 s ·
+    <span class="tier tier-3">reboot</span> requires power cycle
+  </div>
+
+  <div class="actions">
+    <button class="btn secondary" id="reload" type="button">Reload</button>
+    <button class="btn primary" id="save" type="button">Save</button>
+  </div>
+  <div id="msg"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* --- Theme management ------------------------------------------- */
+const T_KEY = 'ipcd-theme';
+function applyTheme(t) {
+  document.documentElement.classList.remove('theme-dark','theme-light');
+  if (t === 'dark')  document.documentElement.classList.add('theme-dark');
+  if (t === 'light') document.documentElement.classList.add('theme-light');
+  /* if t==='auto', no class -> @media query decides */
+}
+function loadTheme() { return localStorage.getItem(T_KEY) || 'auto'; }
+function saveTheme(t) { localStorage.setItem(T_KEY, t); applyTheme(t); }
+applyTheme(loadTheme());
+$('themeToggle').addEventListener('click', () => {
+  const cur = loadTheme();
+  const nxt = cur === 'auto' ? 'dark' : (cur === 'dark' ? 'light' : 'auto');
+  saveTheme(nxt);
+  $('themeToggle').textContent = nxt === 'dark' ? '🌙' : (nxt === 'light' ? '☀️' : '🌓');
+});
+/* Initial icon */
+{ const t = loadTheme();
+  $('themeToggle').textContent = t === 'dark' ? '🌙' : (t === 'light' ? '☀️' : '🌓');
+}
+
+/* --- Config form ------------------------------------------------ */
+function showMsg(t, kind) { const m=$('msg'); m.className=kind||'ok'; m.textContent=t; }
+
+async function loadConfig() {
+  try {
+    const r = await fetch('/api/config'); const j = await r.json();
+    $('enable_main').checked = !!j.enable_main;
+    $('enable_sub').checked  = !!j.enable_sub;
+    $('main_codec').value    = j.main_codec || 'h264';
+    $('sub_codec').value     = j.sub_codec  || 'h264';
+    $('main_kbps').value     = j.main_kbps;
+    $('sub_kbps').value      = j.sub_kbps;
+    $('fps').value           = j.fps;
+    $('gop_sec').value       = j.gop_sec;
+    $('rtsp_port').value     = j.rtsp_port;
+    $('ir_enable').checked   = !!j.ir_enable;
+    $('ir_d2n_lum').value    = j.ir_d2n_lum;
+    $('ir_n2d_lum').value    = j.ir_n2d_lum;
+    $('md_threshold').value  = j.md_threshold;
+    $('audio_volume_db').value  = j.audio_volume_db;
+    $('audio_in_enable').checked  = !!j.audio_in_enable;
+    $('audio_aec_enable').checked = !!j.audio_aec_enable;
+    /* ir_mode is runtime state (not persisted), comes from /api/status */
+    try {
+      const sr = await fetch('/api/status'); const sj = await sr.json();
+      const map = { 0: 'off', 1: 'auto', 2: 'night' };
+      $('ir_mode_sel').value = map[sj.ir_mode] || 'auto';
+    } catch(e) {}
+  } catch(e) {
+    showMsg('Failed to load config: ' + e.message, 'err');
+  }
+}
+loadConfig();
+$('reload').addEventListener('click', () => { showMsg(''); loadConfig(); });
+
+$('save').addEventListener('click', async () => {
+  const btn = $('save'); btn.disabled = true; btn.textContent = 'Saving…';
+  showMsg('');
+  try {
+    /* IR mode is a runtime-only setting; apply via /api/ir first
+     * so the user sees the change even if the rest fails. */
+    try {
+      const fd0 = new URLSearchParams();
+      fd0.set('mode', $('ir_mode_sel').value);
+      await fetch('/api/ir', { method: 'POST', body: fd0 });
+    } catch(e) {}
+
+    const fd = new URLSearchParams();
+    fd.set('enable_main', $('enable_main').checked ? '1' : '0');
+    fd.set('enable_sub',  $('enable_sub').checked  ? '1' : '0');
+    fd.set('ir_enable',   $('ir_enable').checked   ? '1' : '0');
+    fd.set('main_codec',  $('main_codec').value);
+    fd.set('sub_codec',   $('sub_codec').value);
+    fd.set('main_kbps',   $('main_kbps').value);
+    fd.set('sub_kbps',    $('sub_kbps').value);
+    fd.set('fps',         $('fps').value);
+    fd.set('gop_sec',     $('gop_sec').value);
+    fd.set('rtsp_port',   $('rtsp_port').value);
+    fd.set('ir_d2n_lum',  $('ir_d2n_lum').value);
+    fd.set('ir_n2d_lum',  $('ir_n2d_lum').value);
+    fd.set('md_threshold',     $('md_threshold').value);
+    fd.set('audio_volume_db',  $('audio_volume_db').value);
+    fd.set('audio_in_enable',  $('audio_in_enable').checked  ? '1' : '0');
+    fd.set('audio_aec_enable', $('audio_aec_enable').checked ? '1' : '0');
+
+    const r = await fetch('/api/config', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (!r.ok || !j.ok) {
+      showMsg('Save failed: HTTP ' + r.status, 'err');
+    } else if (j.restarted) {
+      showMsg('Saved. Capture is restarting — RTSP clients will reconnect in a few seconds.', 'warn');
+    } else {
+      showMsg('Saved.', 'ok');
+    }
+  } catch(e) {
+    showMsg('Save failed: ' + e.message, 'err');
+  }
+  btn.disabled = false; btn.textContent = 'Save';
+});
+</script>
+</body>
+</html>

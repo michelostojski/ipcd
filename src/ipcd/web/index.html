@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ipcd — Wi-Fi</title>
+<style>
+  /* Light theme (default) */
+  :root {
+    --fg:#1a1a1a; --bg:#fafafa; --card:#fff; --line:#e5e7eb;
+    --muted:#6b7280; --accent:#2563eb; --ok:#059669; --err:#dc2626;
+    --warn:#d97706; --input-bg:#fff; --input-fg:#111;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.theme-light) {
+      --fg:#e5e7eb; --bg:#0b0b0d; --card:#15171c; --line:#1f2937;
+      --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --err:#f87171;
+      --warn:#fbbf24; --input-bg:#1f2937; --input-fg:#e5e7eb;
+    }
+  }
+  html.theme-dark {
+    --fg:#e5e7eb; --bg:#0b0b0d; --card:#15171c; --line:#1f2937;
+    --muted:#9ca3af; --accent:#60a5fa; --ok:#34d399; --err:#f87171;
+    --warn:#fbbf24; --input-bg:#1f2937; --input-fg:#e5e7eb;
+  }
+
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:680px; margin:0 auto; padding:18px; }
+
+  nav { display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--line);
+    align-items:center; }
+  nav a { flex:1; text-align:center; padding:10px 6px; font-size:.85rem;
+    text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; }
+  nav a.active { color:var(--accent); border-color:var(--accent); font-weight:600; }
+  .theme-toggle { background:transparent; border:1px solid var(--line);
+    color:var(--muted); padding:6px 10px; border-radius:6px; font-size:.78rem;
+    cursor:pointer; margin-left:8px; }
+  .theme-toggle:hover { color:var(--fg); }
+
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:.85rem; margin-bottom:14px; }
+
+  /* Same card / field language as Settings, so the layout feels
+   * consistent across all three pages. */
+  .group { background:var(--card); border:1px solid var(--line);
+    border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .group h2 { font-size:.95rem; margin:0 0 10px; font-weight:600; color:var(--fg); }
+  .field { display:flex; align-items:center; justify-content:space-between;
+    gap:10px; padding:8px 0; }
+  .field + .field { border-top:1px dashed var(--line); }
+  .field .label { color:var(--muted); font-size:.88rem; }
+  .field .value { color:var(--fg); font-size:.92rem; font-variant-numeric:tabular-nums;
+    text-align:right; word-break:break-all; }
+
+  /* Form rows: the input takes the full row width so there's room
+   * to type long SSIDs/passwords. The label sits above it. */
+  .row-input { display:flex; flex-direction:column; gap:6px; padding:8px 0; }
+  .row-input + .row-input { border-top:1px dashed var(--line); }
+  .row-input > label { font-size:.88rem; color:var(--muted); }
+  .row-input input[type=text],
+  .row-input input[type=password] {
+    width:100%; padding:10px 12px; font-size:.95rem;
+    background:var(--input-bg); color:var(--input-fg);
+    border:1px solid var(--line); border-radius:8px;
+  }
+  .row-input input:focus { outline:none; border-color:var(--accent); }
+
+  .psk-wrap { position:relative; }
+  .psk-wrap input { padding-right:42px; }
+  .psk-toggle { position:absolute; top:0; right:0; width:36px; height:100%;
+    background:transparent; color:var(--muted); border:none; font-size:1rem;
+    cursor:pointer; }
+  .psk-toggle.on { color:var(--accent); }
+
+  /* Network scan list — sits inside the SSID field's group */
+  .scan-list { margin-top:8px; max-height:200px; overflow-y:auto;
+    border:1px solid var(--line); border-radius:8px; background:var(--bg); }
+  .scan-item { padding:9px 12px; border-bottom:1px solid var(--line); cursor:pointer;
+    display:flex; justify-content:space-between; font-size:.88rem; }
+  .scan-item:hover { background:var(--card); }
+  .scan-item:last-child { border-bottom:none; }
+  .sig { color:var(--muted); font-size:.8rem; }
+
+  /* Action buttons row, same shape as Settings */
+  .actions { display:flex; gap:8px; margin-top:14px; }
+  button.btn { flex:1; padding:11px; border:none; border-radius:8px;
+    font-size:.95rem; font-weight:600; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; }
+  button.primary[disabled] { background:#9ca3af; cursor:not-allowed; }
+  button.secondary { background:transparent; color:var(--accent);
+    border:1px solid var(--accent); }
+
+  #msg { margin-top:12px; font-size:.88rem; min-height:1.2em; }
+  #msg.ok  { color:var(--ok); }
+  #msg.err { color:var(--err); }
+  #msg.warn{ color:var(--warn); }
+
+  .badge { display:inline-block; padding:2px 8px; border-radius:9999px;
+    font-size:.7rem; font-weight:600; }
+  .badge.on  { background:#10b98122; color:var(--ok); }
+  .badge.off { background:#ef444422; color:var(--err); }
+  .badge.idle{ background:#9ca3af22; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="/" class="active">Wifi</a>
+    <a href="/stats">Stats</a>
+    <a href="/config">Settings</a>
+    <a href="/auth">Auth</a>
+    <button class="theme-toggle" id="themeToggle" type="button">🌓</button>
+  </nav>
+
+  <h1>Wi-Fi setup</h1>
+  <div class="sub">Connect this camera to your network.</div>
+
+  <div class="group">
+    <h2>Status</h2>
+    <div class="field"><span class="label">State</span>
+      <span class="value"><span class="badge idle" id="st">—</span></span></div>
+    <div class="field"><span class="label">Saved SSID</span>
+      <span class="value" id="saved">—</span></div>
+    <div class="field"><span class="label">IP</span>
+      <span class="value" id="ip">—</span></div>
+  </div>
+
+  <div class="group">
+    <h2>Network</h2>
+    <div class="row-input">
+      <label for="ssid">Network name (SSID)</label>
+      <input id="ssid" type="text" autocomplete="off" autocapitalize="off" autocorrect="off">
+    </div>
+    <div class="row-input">
+      <label for="psk">Password</label>
+      <div class="psk-wrap">
+        <input id="psk" type="password" autocomplete="off">
+        <button class="psk-toggle" id="pskToggle" type="button" aria-label="Show password">👁</button>
+      </div>
+    </div>
+    <div class="scan-list" id="scanList" style="display:none"></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn secondary" id="scanBtn" type="button">Scan</button>
+    <button class="btn primary"   id="saveBtn" type="button">Save &amp; connect</button>
+  </div>
+  <div id="msg"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* Theme — auto / light / dark, persisted in localStorage. */
+const T_KEY = 'ipcd-theme';
+function applyTheme(t) {
+  document.documentElement.classList.remove('theme-dark','theme-light');
+  if (t === 'dark')  document.documentElement.classList.add('theme-dark');
+  if (t === 'light') document.documentElement.classList.add('theme-light');
+}
+function loadTheme() { return localStorage.getItem(T_KEY) || 'auto'; }
+function saveTheme(t) { localStorage.setItem(T_KEY, t); applyTheme(t); }
+applyTheme(loadTheme());
+{ const t = loadTheme();
+  $('themeToggle').textContent = t === 'dark' ? '🌙' : (t === 'light' ? '☀️' : '🌓');
+}
+$('themeToggle').addEventListener('click', () => {
+  const cur = loadTheme();
+  const nxt = cur === 'auto' ? 'dark' : (cur === 'dark' ? 'light' : 'auto');
+  saveTheme(nxt);
+  $('themeToggle').textContent = nxt === 'dark' ? '🌙' : (nxt === 'light' ? '☀️' : '🌓');
+});
+
+/* Status panel */
+function showMsg(t, kind) { const m=$('msg'); m.className=kind||'ok'; m.textContent=t; }
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/status'); const j = await r.json();
+    const st = $('st');
+    st.textContent = j.state || '—';
+    /* badge color by state */
+    const ok = (j.state === 'STA_OK');
+    const off = (j.state === 'AP_PROVISIONING' || j.state === 'STA_FAIL');
+    st.className = 'badge ' + (ok ? 'on' : (off ? 'off' : 'idle'));
+    $('saved').textContent = j.ssid || '—';
+    $('ip').textContent    = j.ip   || '—';
+  } catch(e) {}
+}
+pollStatus(); setInterval(pollStatus, 2000);
+
+/* PSK reveal toggle */
+$('pskToggle').addEventListener('click', () => {
+  const i = $('psk');
+  const t = $('pskToggle');
+  if (i.type === 'password') { i.type = 'text';  t.classList.add('on');  t.textContent='🙈'; }
+  else                       { i.type = 'password'; t.classList.remove('on'); t.textContent='👁'; }
+});
+
+/* Scan */
+$('scanBtn').addEventListener('click', async () => {
+  const btn = $('scanBtn');
+  btn.disabled = true; btn.textContent = 'Scanning…';
+  showMsg('');
+  try {
+    const r = await fetch('/api/scan'); const j = await r.json();
+    const list = $('scanList');
+    list.innerHTML = '';
+    /* Server returns a JSON array directly: [{ssid,bssid,sig,sec},…] */
+    const nets = Array.isArray(j) ? j : (j.networks || []);
+    nets.forEach(n => {
+      const it = document.createElement('div');
+      it.className = 'scan-item';
+      const name = document.createElement('span'); name.textContent = n.ssid || '(hidden)';
+      const sig  = document.createElement('span'); sig.className = 'sig';
+      sig.textContent = (n.sig != null ? `${n.sig} dBm` : '');
+      it.appendChild(name); it.appendChild(sig);
+      it.addEventListener('click', () => {
+        $('ssid').value = n.ssid; list.style.display = 'none';
+      });
+      list.appendChild(it);
+    });
+    list.style.display = nets.length ? 'block' : 'none';
+  } catch(e) {
+    showMsg('Scan failed: ' + e.message, 'err');
+  }
+  btn.disabled = false; btn.textContent = 'Scan';
+});
+
+/* Save */
+$('saveBtn').addEventListener('click', async () => {
+  const ssid = $('ssid').value.trim();
+  const psk  = $('psk').value;
+  if (!ssid) { showMsg('Enter an SSID first.', 'err'); return; }
+  const btn = $('saveBtn'); btn.disabled = true; btn.textContent = 'Saving…';
+  showMsg('');
+  try {
+    const fd = new URLSearchParams();
+    fd.set('ssid', ssid); fd.set('psk', psk);
+    const r = await fetch('/api/save', { method: 'POST', body: fd });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    showMsg('Saved. The camera is now reconnecting; you may need to reconnect to it on your home network.', 'warn');
+  } catch(e) {
+    showMsg('Save failed: ' + e.message, 'err');
+  }
+  btn.disabled = false; btn.textContent = 'Save & connect';
+});
+</script>
+</body>
+</html>

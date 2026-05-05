@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ipcd — Stats</title>
+<style>
+  :root { --fg:#1a1a1a; --bg:#fafafa; --accent:#2563eb; --err:#dc2626; --muted:#6b7280;
+          --card:#fff; --line:#e5e7eb; --good:#059669;
+          --spark-bg:#f9fafb; }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.theme-light) {
+      --fg:#e5e7eb; --bg:#0b0b0d; --accent:#60a5fa; --err:#f87171;
+      --muted:#9ca3af; --card:#15171c; --line:#1f2937; --good:#34d399;
+      --spark-bg:#0f1117;
+    }
+  }
+  html.theme-dark {
+    --fg:#e5e7eb; --bg:#0b0b0d; --accent:#60a5fa; --err:#f87171;
+    --muted:#9ca3af; --card:#15171c; --line:#1f2937; --good:#34d399;
+    --spark-bg:#0f1117;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--bg); color:var(--fg); }
+  .wrap { max-width:680px; margin:0 auto; padding:18px; }
+  nav { display:flex; gap:6px; margin-bottom:18px; border-bottom:1px solid var(--line); align-items:center; }
+  nav a { flex:1; text-align:center; padding:10px 6px; font-size:.85rem;
+    text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; }
+  nav a.active { color:var(--accent); border-color:var(--accent); font-weight:600; }
+  .theme-toggle { background:transparent; border:1px solid var(--line);
+    color:var(--muted); padding:6px 10px; border-radius:6px; font-size:.78rem;
+    cursor:pointer; margin-left:8px; }
+  .theme-toggle:hover { color:var(--fg); }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:.85rem; margin-bottom:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card h3 { margin:0 0 8px; font-size:.92rem; font-weight:600; color:var(--fg); }
+  .kv { display:flex; justify-content:space-between; padding:3px 0; font-size:.85rem; }
+  .kv + .kv { border-top:1px dashed #f3f4f6; }
+  .kv span:first-child { color:var(--muted); }
+  .badge { display:inline-block; padding:1px 7px; border-radius:9999px; font-size:.72rem;
+    background:var(--line); color:var(--fg); }
+  .badge.on { background:#dcfce7; color:var(--good); }
+  .badge.off{ background:#fee2e2; color:var(--err); }
+  .stream-card { padding:14px; }
+  .stream-card .title { display:flex; justify-content:space-between; align-items:center; }
+  .stream-card .title h3 { margin:0; font-size:1rem; }
+  .nums { display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; margin:10px 0 6px; }
+  .num-block { font-size:.78rem; color:var(--muted); }
+  .num-block .v { font-size:1.05rem; color:#111; font-variant-numeric:tabular-nums; }
+  canvas { width:100%; height:60px; display:block; background:var(--spark-bg); border-radius:6px; }
+  .spark-label { font-size:.72rem; color:var(--muted); margin:6px 0 2px; }
+  #err { color:var(--err); margin-top:10px; font-size:.85rem; min-height:1.2em; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="/">Wifi</a>
+    <a href="/stats" class="active">Stats</a>
+    <a href="/config">Settings</a>
+    <a href="/auth">Auth</a>
+    <button class="theme-toggle" id="themeToggle" type="button">🌓</button>
+  </nav>
+  <h1>Statistics</h1>
+  <div class="sub">Updates every 1s · 60s sparkline window</div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>System</h3>
+      <div class="kv"><span>State</span><span id="state">—</span></div>
+      <div class="kv"><span>SSID</span><span id="ssid">—</span></div>
+      <div class="kv"><span>IP</span><span id="ip">—</span></div>
+      <div class="kv"><span>Uptime</span><span id="uptime">—</span></div>
+      <div class="kv"><span>RSS</span><span id="rss">—</span></div>
+    </div>
+    <div class="card">
+      <h3>Misc info</h3>
+      <div class="kv"><span>RTSP clients</span><span id="rtsp">—</span></div>
+      <div class="kv"><span>Day / night</span>
+        <span><span class="badge" id="ir-status">—</span></span></div>
+      <div class="kv"><span>Luma</span><span id="ir-luma">—</span></div>
+    </div>
+  </div>
+
+  <div id="streams" class="grid" style="margin-top:14px;"></div>
+  <div id="err"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* Theme manager — auto / light / dark, persisted. */
+const T_KEY = 'ipcd-theme';
+function applyTheme(t) {
+  document.documentElement.classList.remove('theme-dark','theme-light');
+  if (t === 'dark')  document.documentElement.classList.add('theme-dark');
+  if (t === 'light') document.documentElement.classList.add('theme-light');
+}
+function loadTheme() { return localStorage.getItem(T_KEY) || 'auto'; }
+applyTheme(loadTheme());
+{ const t = loadTheme();
+  $('themeToggle').textContent = t === 'dark' ? '🌙' : (t === 'light' ? '☀️' : '🌓');
+}
+$('themeToggle').addEventListener('click', () => {
+  const cur = loadTheme();
+  const nxt = cur === 'auto' ? 'dark' : (cur === 'dark' ? 'light' : 'auto');
+  localStorage.setItem(T_KEY, nxt); applyTheme(nxt);
+  $('themeToggle').textContent = nxt === 'dark' ? '🌙' : (nxt === 'light' ? '☀️' : '🌓');
+});
+
+function fmtUptime(s) {
+  if (s == null) return '—';
+  const d = Math.floor(s / 86400); s %= 86400;
+  const h = Math.floor(s / 3600);  s %= 3600;
+  const m = Math.floor(s / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${s % 60}s`;
+}
+function fmtKB(kb) { if (kb == null) return '—'; if (kb < 1024) return kb + ' KB'; return (kb/1024).toFixed(1) + ' MB'; }
+function fmtBytes(b) { if (b == null) return '—'; if (b < 1024) return b + ' B'; if (b < 1048576) return (b/1024).toFixed(1) + ' KB'; return (b/1048576).toFixed(2) + ' MB'; }
+
+/* Per-stream cards built once, then updated in place. */
+function ensureStreamCards(streams) {
+  const host = $('streams');
+  if (host.dataset.built === '1' && host.children.length === streams.length) return;
+  host.innerHTML = '';
+  streams.forEach((s, i) => {
+    const c = document.createElement('div');
+    c.className = 'card stream-card';
+    c.dataset.idx = i;
+    c.innerHTML = `
+      <div class="title">
+        <h3>${i === 0 ? 'Main' : 'Sub'} stream</h3>
+        <span class="badge" data-en>—</span>
+      </div>
+      <div class="kv"><span>Codec / size</span><span data-cfg>—</span></div>
+      <div class="nums">
+        <div class="num-block">FPS <span class="v" data-fps>0</span></div>
+        <div class="num-block">Bitrate <span class="v" data-kbps>0</span> kbps</div>
+        <div class="num-block">Frames <span class="v" data-tf>0</span></div>
+        <div class="num-block">Keyframes <span class="v" data-tk>0</span></div>
+      </div>
+      <div class="spark-label">FPS (last 60s)</div>
+      <canvas data-spark-fps width="600" height="60"></canvas>
+      <div class="spark-label">Bitrate kbps (last 60s)</div>
+      <canvas data-spark-kbps width="600" height="60"></canvas>
+      <div class="kv" style="margin-top:8px;"><span>Total bytes</span><span data-bytes>—</span></div>
+      <div class="kv"><span>Max frame</span><span data-mfb>—</span></div>
+      <div class="kv"><span>Push fails</span><span data-pf>—</span></div>
+    `;
+    host.appendChild(c);
+  });
+  host.dataset.built = '1';
+}
+
+function drawSpark(canvas, data, color, target) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.clientWidth || canvas.width;
+  const H = canvas.clientHeight || 60;
+  /* Make canvas size match displayed size on first paint to avoid blur */
+  if (canvas.width !== W) canvas.width = W;
+  if (canvas.height !== H) canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+  if (!data || !data.length) return;
+  const max = Math.max(target || 1, ...data, 1);
+  const pad = 4;
+  /* Draw target line if present */
+  if (target && target > 0) {
+    const y = H - pad - ((target / max) * (H - pad * 2));
+    ctx.strokeStyle = '#d1d5db'; ctx.setLineDash([2,3]);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  /* Bars */
+  ctx.fillStyle = color;
+  const bw = W / data.length;
+  for (let i = 0; i < data.length; i++) {
+    const v = data[i];
+    if (v <= 0) continue;
+    const h = (v / max) * (H - pad * 2);
+    ctx.fillRect(i * bw, H - pad - h, Math.max(1, bw - 0.5), h);
+  }
+  /* Last value */
+  ctx.fillStyle = '#374151';
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'right';
+  ctx.fillText(String(Math.round(data[data.length-1] || 0)), W - 2, 10);
+}
+
+function updateStream(card, s) {
+  card.querySelector('[data-en]').textContent = s.enabled ? 'on' : 'off';
+  card.querySelector('[data-en]').className   = 'badge ' + (s.enabled ? 'on' : 'off');
+  card.querySelector('[data-cfg]').textContent =
+    `${(s.codec||'').toUpperCase()} ${s.width}×${s.height} @ ${s.fps_target} (${s.kbps_target} kbps)`;
+  card.querySelector('[data-fps]').textContent  = (s.fps_actual || 0).toFixed(1);
+  card.querySelector('[data-kbps]').textContent = (s.kbps_actual || 0).toFixed(0);
+  card.querySelector('[data-tf]').textContent   = s.total_frames || 0;
+  card.querySelector('[data-tk]').textContent   = s.total_keyframes || 0;
+  card.querySelector('[data-bytes]').textContent= fmtBytes(s.total_bytes);
+  card.querySelector('[data-mfb]').textContent  = fmtBytes(s.max_frame_bytes);
+  card.querySelector('[data-pf]').textContent   = s.push_fails || 0;
+  drawSpark(card.querySelector('[data-spark-fps]'),  s.fps_hist || [],  '#2563eb', s.fps_target);
+  drawSpark(card.querySelector('[data-spark-kbps]'), s.kbps_hist || [], '#059669', s.kbps_target);
+}
+
+let consec_fail = 0;
+async function refresh() {
+  try {
+    const r = await fetch('/api/stats'); const j = await r.json();
+    consec_fail = 0; $('err').textContent = '';
+    $('state').textContent  = j.state || '—';
+    $('ssid').textContent   = j.ssid  || '—';
+    $('ip').textContent     = j.ip    || '—';
+    $('uptime').textContent = fmtUptime(j.uptime_s);
+    $('rss').textContent    = fmtKB(j.rss_kb);
+    $('rtsp').textContent   = (j.rtsp_clients ?? 0);
+    /* IR pill in Misc info */
+    if (typeof j.ir_level === 'number') {
+      const status = $('ir-status');
+      const labels = { 0: 'AUTO', 1: 'OFF', 2: 'NIGHT' };
+      const lvlTxt = j.ir_level ? 'night' : 'day';
+      const modeTxt = labels[j.ir_mode] || '';
+      status.textContent = (modeTxt && j.ir_mode !== 1)
+                            ? `${lvlTxt.toUpperCase()} (${modeTxt.toLowerCase()})`
+                            : lvlTxt.toUpperCase();
+      status.className = 'badge ' + (j.ir_level ? 'off' : 'on');
+      $('ir-luma').textContent = j.ir_luma != null ? j.ir_luma : '—';
+    }
+    ensureStreamCards(j.streams || []);
+    (j.streams || []).forEach((s, i) => {
+      const card = document.querySelector(`#streams .card[data-idx="${i}"]`);
+      if (card) updateStream(card, s);
+    });
+  } catch(e) {
+    consec_fail++;
+    if (consec_fail > 2) $('err').textContent = 'Connection lost. Retrying…';
+  }
+}
+
+refresh(); setInterval(refresh, 1000);
+</script>
+</body>
+</html>

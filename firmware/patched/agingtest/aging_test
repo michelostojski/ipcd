@@ -1,0 +1,37 @@
+#!/bin/sh
+
+echo "Sleeping 5 seconds before starting..."
+sleep 5
+
+if test ! -f "/mnt/app.bin.installed" ; then
+	echo "IPCD not installed, starting work..."
+	/usr/sbin/red_led.sh blink
+	/usr/sbin/blue_led.sh off
+	sleep 3
+	if test ! -f "/mnt/app_original.bin" ; then
+		echo "Backing up original mtdblock7..."
+		/bin/dd if=/dev/mtdblock7 of=/mnt/app_original.bin
+		echo "Done!"
+	fi
+	if test -f "/mnt/app.bin" ; then
+		echo "Rewriting /dev/mtdblock7 with modified app.bin..."
+		/bin/mtd_debug erase /dev/mtd7 0x0 0x3F4000
+		/bin/sync
+		/bin/dd if=/mnt/app.bin of=/dev/mtdblock7 bs=4096 conv=fsync
+		/bin/sync
+		echo "Done, rebooting!"
+		echo 1 > /mnt/app.bin.installed
+		/usr/sbin/red_led.sh on
+		/usr/sbin/blue_led.sh blink
+		sleep 5
+		/sbin/reboot
+	else
+		echo "No firmware image found."
+		/usr/sbin/red_led.sh off
+		/usr/sbin/blue_led.sh off
+		/usr/bin/ipcd &
+	fi
+else
+	echo "IPCD already installed!"
+	/usr/bin/ipcd &
+fi
