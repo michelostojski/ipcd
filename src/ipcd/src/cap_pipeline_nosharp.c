@@ -465,22 +465,6 @@ extern int   ak_vpss_set_fps_level(int dev_id, const uint32_t table[9]);
 extern int   Ak_ISP_Set_Sensor_Fps(int dev_id, int *fps);
 extern int   Ak_ISP_Get_Sensor_Fps(int dev_id, int *fps);
 struct isp_flip_mirror_info { int flip_en; int mirror_en; };
-/* Sharpness control - reduce over-sharpening that causes edge irisation.
- * Struct layout must match ak_isp_drv.h AK_ISP_SHARP exactly. */
-typedef struct {
-    unsigned short mf_hpf_k, mf_hpf_shift, hf_hpf_k, hf_hpf_shift;
-    unsigned short sharp_method, sharp_skin_gain_weaken;
-    unsigned short sharp_skin_gain_th, sharp_skin_detect_enable, ysharp_enable;
-    short MF_HPF_LUT[256];
-    short HF_HPF_LUT[256];
-} AKSHARP;
-typedef struct {
-    unsigned short ysharp_mode;
-    AKSHARP manual_sharp_attr;
-    AKSHARP linkage_sharp_attr[9];
-} AKSHARPATTR;
-extern int AK_ISP_get_sharp_attr(AKSHARPATTR *p);
-extern int AK_ISP_set_sharp_attr(const AKSHARPATTR *p);
 extern int   isp_set_flip_mirror(struct isp_flip_mirror_info *info);
 extern int   ak_vpss_get_sensor_fps(int dev_id, int *fps);
 
@@ -1347,22 +1331,6 @@ static int vi_init(void)
         fm.mirror_en = 0;
         fprintf(stderr, "[isp] isp_set_flip_mirror flip=%d mirror=%d\n", fm.flip_en, fm.mirror_en);
         isp_set_flip_mirror(&fm);
-    }
-    /* reduce sharpening — kills edge color-fringing (irisation) */
-    {
-        AKSHARPATTR sh;
-        int _rg = AK_ISP_get_sharp_attr(&sh);
-        sh.ysharp_mode = 0;
-        sh.manual_sharp_attr.ysharp_enable = 0;
-        sh.manual_sharp_attr.mf_hpf_k = 0;
-        sh.manual_sharp_attr.hf_hpf_k = 0;
-        for (int _i = 0; _i < 9; _i++) {
-            sh.linkage_sharp_attr[_i].ysharp_enable = 0;
-            sh.linkage_sharp_attr[_i].mf_hpf_k = 0;
-            sh.linkage_sharp_attr[_i].hf_hpf_k = 0;
-        }
-        int _rs = AK_ISP_set_sharp_attr(&sh);
-        fprintf(stderr, "[isp] sharpening get=%d set=%d\n", _rg, _rs);
     }
     /* 7) Enable the channels (logs "set channel [N] capture on"). */
     if (G_cfg.enable_main) {

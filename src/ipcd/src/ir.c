@@ -56,11 +56,6 @@
 
 #include "ipcd.h"
 
-/* SDK prototype — only one function needed: read current AE luma.
- * The other day/night APIs (ak_vpss_set_auto_day_night_param /
- * get_auto_day_night_level / soft_ps_*) didn't behave as documented
- * on this firmware ISP. We get the luma here and run our own
- * detector — see poll_thread() below. */
 extern int ak_vpss_get_cur_lumi(int dev_id, int *lumi);
 
 /* sysfs paths */
@@ -77,7 +72,7 @@ static const char *IRCUT_A_CANDIDATES[] = {
 static const char *IRCUT_B_CANDIDATES[] = {
     "/sys/class/leds/ircut_b/brightness",
     "/sys/class/leds/ircut/ircut_b",
-    "/sys/class/gpio/gpio42/value",
+    "/sys/class/gpio/gpio80/value",
     NULL,
 };
 
@@ -184,11 +179,11 @@ static void ircut_set(int to_night)
 {
     if (!I.ircut_a || !I.ircut_b) return;
     if (to_night) {
-        sysfs_write_int(I.ircut_a, 0);
-        sysfs_write_int(I.ircut_b, 1);
-    } else {
         sysfs_write_int(I.ircut_a, 1);
         sysfs_write_int(I.ircut_b, 0);
+    } else {
+        sysfs_write_int(I.ircut_a, 0);
+        sysfs_write_int(I.ircut_b, 1);
     }
     usleep(100 * 1000);
     sysfs_write_int(I.ircut_a, 0);
@@ -200,11 +195,9 @@ static void hw_apply(int night)
 {
     irled_set(night);
     ircut_set(night);
-    fprintf(stderr, "[ir] hw -> %s "
-            "(led=%s, ircut=%s)\n",
-            night ? "night" : "day",
-            I.irled_ok ? (night ? "on" : "off") : "n/a",
-            I.ircut_a   ? (night ? "night-pulse" : "day-pulse") : "n/a");
+
+    cap_set_chroma(night ? 0 : 1);   /* night=mono (no pink), day=color */
+    fprintf(stderr, "[ir] hw -> %s (led=%s, ircut=%s)\n", night ? "night" : "day", I.irled_ok ? (night ? "on" : "off") : "n/a", I.ircut_a ? (night ? "night-pulse" : "day-pulse") : "n/a");
 }
 
 /* ---------------------------------------------------------------- */
@@ -232,8 +225,8 @@ static void hw_apply(int night)
 /* implement it directly.                                          */
 /* ---------------------------------------------------------------- */
 #define IR_POLL_PERIOD_MS       500     /* poll every 500 ms */
-#define IR_NIGHT_CONFIRM_HITS   4       /* 2 s of dark scene  */
-#define IR_DAY_CONFIRM_HITS     4       /* 2 s of bright scene */
+#define IR_NIGHT_CONFIRM_HITS   20       /* 2 s of dark scene  */
+#define IR_DAY_CONFIRM_HITS     20       /* 2 s of bright scene */
 
 static void *poll_thread(void *arg)
 {

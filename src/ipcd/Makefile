@@ -83,7 +83,8 @@ LDFLAGS  := -L$(LIB_DIR) \
             -Wl,--end-group \
             -lpthread -ldl -lm -lrt \
             -Wl,--gc-sections \
-            -Wl,-rpath,/usr/lib
+            -Wl,-rpath,/usr/lib \
+            -Wl,-rpath-link,$(LIB_DIR)
 
 # -------------------------------------------------------------------
 # Sources
@@ -115,7 +116,9 @@ C_SOURCES := \
     $(SRC_DIR)/stats.c          \
     $(SRC_DIR)/ir.c             \
     $(SRC_DIR)/cap_pipeline.c   \
-    $(SRC_DIR)/rtsp_server.c
+    $(SRC_DIR)/rtsp_server.c    \
+    $(SRC_DIR)/onvif_ptz.c      \
+    $(SRC_DIR)/ptz_motor.c
 
 OBJS := $(C_SOURCES:.c=.o)
 

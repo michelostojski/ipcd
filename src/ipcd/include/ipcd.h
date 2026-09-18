@@ -162,6 +162,7 @@ int  capture_start(const struct capture_cfg *cfg);
 /* Tear everything down: VI, VENC, RTSP, HLS, stream workers.
  * Blocks until threads have joined. */
 void capture_stop(void);
+void cap_set_chroma(int color);
 
 int  capture_is_running(void);
 
@@ -503,6 +504,9 @@ int  onvif_events_dispatch(const char *op, const char *query,
                            const char *body,
                            const char *host, int port,
                            char *out, size_t cap, size_t *out_len);
+  /* PTZ (onvif_ptz.c) */
+size_t onvif_ptz_dispatch(const char *op, const char *body,
+                          char *out, size_t cap);
 
 /* Motion detection threshold — sum of per-block deltas from
  * ak_vpss_md_get_stat (range 0..1536*255). Default 1500.

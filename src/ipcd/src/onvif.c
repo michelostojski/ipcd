@@ -310,9 +310,15 @@ static size_t op_get_capabilities(char *out, size_t cap,
                 "<tt:AccessPolicyConfig>false</tt:AccessPolicyConfig>"
                 "<tt:X.509Token>false</tt:X.509Token>"
                 "<tt:SAMLToken>false</tt:SAMLToken>"
-                "<tt:KerberosToken>false</tt:KerberosToken>"
-                "<tt:RELToken>false</tt:RELToken></tt:Security>"
+                "<tt:KerberosToken>false</tt:KerberosToken>"                "<tt:RELToken>false</tt:RELToken></tt:Security>"
             "</tt:Device>"
+            "<tt:Events>"
+              "<tt:XAddr>http://%s:%d/onvif/events_service</tt:XAddr>"
+              "<tt:WSSubscriptionPolicySupport>false</tt:WSSubscriptionPolicySupport>"
+              "<tt:WSPullPointSupport>true</tt:WSPullPointSupport>"
+              "<tt:WSPausableSubscriptionManagerInterfaceSupport>false"
+              "</tt:WSPausableSubscriptionManagerInterfaceSupport>"
+            "</tt:Events>"
             "<tt:Media>"
               "<tt:XAddr>http://%s:%d/onvif/media_service</tt:XAddr>"
               "<tt:StreamingCapabilities>"
@@ -321,17 +327,14 @@ static size_t op_get_capabilities(char *out, size_t cap,
                 "<tt:RTP_RTSP_TCP>true</tt:RTP_RTSP_TCP>"
               "</tt:StreamingCapabilities>"
             "</tt:Media>"
-            "<tt:Events>"
-              "<tt:XAddr>http://%s:%d/onvif/events_service</tt:XAddr>"
-              "<tt:WSSubscriptionPolicySupport>false</tt:WSSubscriptionPolicySupport>"
-              "<tt:WSPullPointSupport>true</tt:WSPullPointSupport>"
-              "<tt:WSPausableSubscriptionManagerInterfaceSupport>false"
-              "</tt:WSPausableSubscriptionManagerInterfaceSupport>"
-            "</tt:Events>"
+
+            "<tt:PTZ>"
+              "<tt:XAddr>http://%s:%d/onvif/ptz_service</tt:XAddr>"
+            "</tt:PTZ>"
           "</tds:Capabilities>"
         "</tds:GetCapabilitiesResponse>"
         SOAP_ENV_CLOSE,
-        host, port, host, port, host, port);
+        host, port, host, port, host, port,host, port);
     if (n < 0 || (size_t)n >= cap) return 0;
     return (size_t)n;
 }
@@ -358,10 +361,24 @@ static size_t op_get_services(char *out, size_t cap,
             "<tds:Namespace>http://www.onvif.org/ver10/events/wsdl</tds:Namespace>"
             "<tds:XAddr>http://%s:%d/onvif/events_service</tds:XAddr>"
             "<tds:Version><tt:Major>2</tt:Major><tt:Minor>5</tt:Minor></tds:Version>"
+           "</tds:Service>"
+
+          "<tds:Service>"
+
+            "<tds:Namespace>http://www.onvif.org/ver20/ptz/wsdl</tds:Namespace>"
+
+            "<tds:XAddr>http://%s:%d/onvif/ptz_service</tds:XAddr>"
+
+            "<tds:Version><tt:Major>2</tt:Major><tt:Minor>5</tt:Minor></tds:Version>"
+
           "</tds:Service>"
+
         "</tds:GetServicesResponse>"
+
         SOAP_ENV_CLOSE,
-        host, port, host, port, host, port);
+
+        host, port, host, port, host, port, host, port);
+       
     if (n < 0 || (size_t)n >= cap) return 0;
     return (size_t)n;
 }
@@ -476,6 +493,15 @@ static size_t emit_profile(char *out, size_t cap,
               "<tt:AutoStart>false</tt:AutoStart></tt:Multicast>"
             "<tt:SessionTimeout>PT60S</tt:SessionTimeout>"
           "</tt:VideoEncoderConfiguration>"
+                    "<tt:PTZConfiguration token=\"ptzcfg0\">"
+            "<tt:Name>ptzcfg0</tt:Name>"
+            "<tt:UseCount>2</tt:UseCount>"
+            "<tt:NodeToken>ptznode0</tt:NodeToken>"
+            "<tt:DefaultAbsolutePantTiltPositionSpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/PositionGenericSpace</tt:DefaultAbsolutePantTiltPositionSpace>"
+            "<tt:DefaultContinuousPanTiltVelocitySpace>http://www.onvif.org/ver10/tptz/PanTiltSpaces/VelocityGenericSpace</tt:DefaultContinuousPanTiltVelocitySpace>"
+            "<tt:DefaultPTZSpeed><tt:PanTilt x=\"0.5\" y=\"0.5\" space=\"http://www.onvif.org/ver10/tptz/PanTiltSpaces/GenericSpeedSpace\"/></tt:DefaultPTZSpeed>"
+            "<tt:DefaultPTZTimeout>PT5S</tt:DefaultPTZTimeout>"
+          "</tt:PTZConfiguration>"
         "</trt:%s>",
         wrapper_tag, token, token,
         venc_token, venc_token,
@@ -1256,6 +1282,13 @@ int onvif_dispatch(const char *service_path, const char *query,
         return onvif_events_dispatch(op, query, body, host, port,
                                      out, cap, out_len);
     }
+    if (strcmp(service_path, "/onvif/ptz_service") == 0) {
+        size_t pn = onvif_ptz_dispatch(op, body, out, cap);
+        if (pn == 0)
+            pn = emit_fault(out, cap, "Receiver:ActionNotSupported", op);
+        *out_len = pn;
+        return 0;
+    }
 
     /* Device + Media share the same handler set; we just match by
      * operation name. Some deployments split them by service path
@@ -1342,6 +1375,14 @@ int onvif_dispatch(const char *service_path, const char *query,
         n = op_get_certificates(out, cap);
     else if (!strcmp(op, "GetCertificatesStatus"))
         n = op_get_certificates_status(out, cap);
+    else if (!strcmp(op, "GetNodes")   || !strcmp(op, "GetNode") ||
+        !strcmp(op, "ContinuousMove") || !strcmp(op, "Stop") ||
+        !strcmp(op, "AbsoluteMove")   || !strcmp(op, "RelativeMove") ||
+        !strcmp(op, "GetConfigurations") ||
+        !strcmp(op, "GetConfiguration")  ||
+        !strcmp(op, "GetConfigurationOptions")) {
+        n = onvif_ptz_dispatch(op, body, out, cap);
+    }
     else {
         fprintf(stderr, "[onvif] unsupported operation: %s\n", op);
         n = emit_fault(out, cap, "Receiver:ActionNotSupported", op);
